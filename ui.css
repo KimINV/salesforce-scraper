@@ -1,0 +1,53 @@
+#brf-export-button {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2147480000;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 14px;
+  line-height: 1;
+  padding: 10px 14px;
+  color: #fff;
+  background: #1a73e8;
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  cursor: pointer;
+}
+#brf-export-button:hover {
+  background: #1669c1;
+}
+#brf-export-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.brf-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 70px;
+  z-index: 2147480000;
+  max-width: 320px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: #fff;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 13px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity .2s ease, transform .2s ease;
+}
+.brf-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.brf-toast-info { background: #2b7de9; }
+.brf-toast-success { background: #1a8f3e; }
+.brf-toast-error { background: #d93025; }
+
+/* Map types to classes */
+.brf-toast-info { }
+.brf-toast-success { }
+.brf-toast-error { }
+
