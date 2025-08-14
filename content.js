@@ -471,25 +471,89 @@
       return normalizeText(title);
     }
     
-    // Get text content and filter out help text
+    // Get text content and filter out help text and action text
     const text = normalizeText(valueEl.textContent || valueEl.innerText || "");
-    const cleanedText = filterOutHelpText(text);
+    let cleanedText = filterOutHelpText(text);
+    cleanedText = filterOutActionText(cleanedText);
     
     return cleanedText;
+  }
+
+  function containsActionText(text) {
+    if (!text) return false;
+    
+    const actionPatterns = [
+      /\bopen\b/gi,
+      /\bpreview\b/gi,
+      /\bedit\b/gi,
+      /\bview\b/gi,
+      /\bshow\b/gi,
+      /\bmore\b/gi,
+      /\bactions\b/gi
+    ];
+    
+    return actionPatterns.some(pattern => pattern.test(text));
+  }
+
+  function filterOutActionText(text) {
+    if (!text) return "";
+    
+    // Remove common action text patterns
+    let cleanedText = text
+      // Remove "Open [Name] Preview" patterns
+      .replace(/(.+?)Open\s+\1\s+Preview/gi, '$1')
+      // Remove "Open [Name] PreviewOpen [Name] Preview" repetitions
+      .replace(/(.+?)(?:Open\s+\1(?:\s+Preview)?)+/gi, '$1')
+      // Remove standalone action words
+      .replace(/\s+(Open|Preview|Edit|View|Show|More|Actions)\s+/gi, ' ')
+      // Remove action words at the end
+      .replace(/\s+(Open|Preview|Edit|View|Show|More|Actions)$/gi, '')
+      // Clean up extra spaces
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    return cleanedText;
+  }
+
+  function isActionElement(el) {
+    if (!el) return false;
+    
+    const tagName = el.tagName?.toLowerCase();
+    const className = el.className || "";
+    const text = normalizeText(el.textContent || "");
+    
+    // Skip interactive elements
+    if (tagName === 'button' || tagName === 'a') {
+      return true;
+    }
+    
+    // Skip elements with action-related classes
+    if (className.includes('button') || className.includes('action') || 
+        className.includes('link') || className.includes('menu')) {
+      return true;
+    }
+    
+    // Skip elements with action text
+    const actionTexts = ['open', 'preview', 'edit', 'view', 'show', 'more', 'actions'];
+    if (actionTexts.some(action => text.toLowerCase() === action)) {
+      return true;
+    }
+    
+    return false;
   }
 
   function findValueElement(container) {
     if (!container) return null;
     
-    // First pass: try to find elements with clean content
+    // First pass: try to find clean, non-interactive elements
     for (const sel of VALUE_SELECTORS) {
       try {
         const elements = container.querySelectorAll(sel);
         for (const el of elements) {
-          if (el && isElementVisible(el) && !isHelpElement(el)) {
+          if (el && isElementVisible(el) && !isHelpElement(el) && !isActionElement(el)) {
             const text = normalizeText(el.textContent || el.innerText);
             const cleanedText = filterOutHelpText(text);
-            if (cleanedText) {
+            if (cleanedText && !containsActionText(cleanedText)) {
               return el;
             }
           }
@@ -499,23 +563,34 @@
       }
     }
     
-    // Second pass: be less strict if we didn't find anything
+    // Second pass: find the best element even if it contains some action text
+    let bestElement = null;
+    let bestScore = -1;
+    
     for (const sel of VALUE_SELECTORS) {
       try {
-        const el = container.querySelector(sel);
-        if (el && isElementVisible(el)) {
-          const text = normalizeText(el.textContent || el.innerText);
-          // Accept any non-empty text that doesn't look like pure help text
-          if (text && !text.match(/^[^?]*\?\s*Help\s+[^?]*\?/)) {
-            return el;
+        const elements = container.querySelectorAll(sel);
+        for (const el of elements) {
+          if (el && isElementVisible(el) && !isHelpElement(el)) {
+            const text = normalizeText(el.textContent || el.innerText);
+            const cleanedText = filterOutActionText(text);
+            
+            if (cleanedText && !text.match(/^[^?]*\?\s*Help\s+[^?]*\?/)) {
+              // Score based on text length and cleanliness
+              const score = cleanedText.length - (text.length - cleanedText.length) * 2;
+              if (score > bestScore) {
+                bestScore = score;
+                bestElement = el;
+              }
+            }
           }
         }
       } catch (e) {
-        console.debug("[BRF] VALUE_SELECTORS fallback failed:", sel, e);
+        console.debug("[BRF] VALUE_SELECTORS scoring failed:", sel, e);
       }
     }
     
-    return null;
+    return bestElement;
   }
 
   function tryFindLink(container) {
