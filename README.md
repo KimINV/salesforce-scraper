@@ -16,7 +16,8 @@ An advanced Chrome Extension for Salesforce Lightning record detail pages with s
   - **Chatter**: Latest feed items with author, timestamp, and content
 - **Robust Field Mapping**: 100+ predefined field mappings with smart fallbacks
 - **Help Text Immunity**: Advanced filtering prevents Salesforce help tooltips from contaminating data
-- Triggers local download: `brf-<recordId>-<timestamp>.json`
+- **Smart File Naming**: Uses actual Brief ID and Brief Item for meaningful filenames
+- Triggers local download: `<briefId>_<briefItem>.json` (e.g., `BRF-026473_BI-043525.json`)
 - Completely local: no network requests, no external libraries
 
 ## Key Advanced Features
@@ -45,9 +46,22 @@ An advanced Chrome Extension for Salesforce Lightning record detail pages with s
 - **Punctuation Tolerance**: Accounts for punctuation variations
 - **Null Assignment**: Properly sets empty fields to `null`
 
+### 🚫 Action Text Filtering  
+**Problem Solved**: Salesforce UI elements often contain action buttons that pollute field values:
+```
+"opportunityName": "Keurig Dr. Pepper...2025Open Keurig Dr. Pepper...2025 PreviewOpen..."
+```
+
+**Our Solution**: Intelligent action text removal:
+- **Element Detection**: Identifies buttons, links, and interactive elements
+- **Pattern Recognition**: Removes "Open", "Preview", "Edit", "View" repetitions
+- **Smart Scoring**: Prioritizes elements with the most actual content vs. action text
+- **Content Preservation**: Maintains the core field value while removing UI noise
+
 ### 🔍 Smart Value Element Selection
 - **Two-Pass Selection**: Strict filtering first, then fallback for edge cases
 - **Help Element Avoidance**: Skips DOM elements marked as help/assistive
+- **Action Element Filtering**: Avoids buttons and interactive UI elements
 - **Content Validation**: Ensures extracted text is meaningful, not just labels
 - **Link Prioritization**: Special handling for URL fields (Figma, external links)
 
@@ -88,7 +102,7 @@ For specific object types only:
 Edit the file: `manifest.json`
 
 ## Output Format
-Clean, structured JSON with intelligent section organization:
+Clean, flattened JSON structure with intelligent section organization:
 
 ```json
 {
@@ -97,36 +111,35 @@ Clean, structured JSON with intelligent section organization:
     "url": "https://yourcompany.lightning.force.com/lightning/r/Brief_Item__c/a3IPg000000FM0HMAW/view",
     "timestamp": "2025-01-14T00:17:12.039Z"
   },
-  "sections": {
-    "general": {
-      "briefId": "BRF-026473",
-      "campaignName": "C4 Performance Campaign",
-      "account": "Keurig Dr. Pepper",
-      "opportunityOwner": "Halen Butorac",
-      "startDate": "6/2/2025",
-      "endDate": "6/15/2025",
-      "figmaLink": "https://figma.com/file/xyz...",
-      "assetsApproved": null,  // ← Clean null, not help text!
-      "agencyContract": null   // ← Clean null, not "Agency Contract" label!
-    },
-    "budgetAndPayments": {
-      "budget": null,
-      "budgetPeriod": null,
-      "dailyBudgetCap": null,
-      "advertiserBudget": "USD 2,000.00",
-      "paymentProtocol": null,
-      "minimumCartSubtotal": null
-    },
-    "discountsAndFees": {
-      "flatDiscountForConsumer": "USD 2.00",
-      "incrementalMarketingFeePerRedemption": "USD 1.00"
-    },
-    "configurationDetails": {
-      "applicableDoordashOrderTypes": "All",
-      "itemLevelPromoType": "Mix & Match",
-      "brands": "C4 Performance",
-      "storePageBannerIncludedForPromo": "No"
-    }
+  "general": {
+    "briefId": "BRF-026473",
+    "briefItem": "BI-043525",
+    "campaignName": "C4 Performance Campaign",
+    "account": "Keurig Dr. Pepper",
+    "opportunityOwner": "Halen Butorac",  // ← Clean text, no "Open Preview" noise!
+    "startDate": "6/2/2025",
+    "endDate": "6/15/2025",
+    "figmaLink": "https://figma.com/file/xyz...",
+    "assetsApproved": null,  // ← Clean null, not help text!
+    "agencyContract": null   // ← Clean null, not "Agency Contract" label!
+  },
+  "budgetAndPayments": {
+    "budget": null,
+    "budgetPeriod": null,
+    "dailyBudgetCap": null,
+    "advertiserBudget": "USD 2,000.00",
+    "paymentProtocol": null,
+    "minimumCartSubtotal": null
+  },
+  "discountsAndFees": {
+    "flatDiscountForConsumer": "USD 2.00",
+    "incrementalMarketingFeePerRedemption": "USD 1.00"
+  },
+  "configurationDetails": {
+    "applicableDoordashOrderTypes": "All",
+    "itemLevelPromoType": "Mix & Match",
+    "brands": "C4 Performance",
+    "storePageBannerIncludedForPromo": "No"
   },
   "chatter": [
     {
@@ -138,17 +151,21 @@ Clean, structured JSON with intelligent section organization:
 }
 ```
 
+**Exported as**: `BRF-026473_BI-043525.json`
+
 ### ✨ Data Quality Highlights
 - **No Help Text Contamination**: Fields contain actual values or `null`, never help descriptions
 - **No Label Pollution**: Empty fields are `null`, not field label text
+- **No Action Text Noise**: Clean field values without "Open", "Preview", "Edit" button text
 - **Clean URLs**: Link fields contain actual URLs, not display text
-- **Consistent Structure**: Section schemas ensure predictable field presence
+- **Flattened Structure**: Direct access to sections without nested "sections" wrapper
+- **Semantic File Names**: Files named with actual Brief IDs using hierarchy format `BRF-XXXX_BI-XXXX.json`
 
 ## Architecture & Advanced Logic
 
 ### Text Processing Pipeline
 ```
-Raw DOM Text → Help Element Detection → Label Detection → Text Sanitization → Value Assignment
+Raw DOM Text → Help Element Detection → Action Element Detection → Label Detection → Text Sanitization → Action Text Filtering → Value Assignment
 ```
 
 #### 1. Help Element Detection (`isHelpElement`)
@@ -169,7 +186,24 @@ Raw DOM Text → Help Element Detection → Label Detection → Text Sanitizatio
 - Short help text under 200 chars with "Help" keywords
 ```
 
-#### 3. Field Label Detection (`isFieldLabel`)  
+#### 3. Action Element Detection (`isActionElement`)
+```javascript
+// Identifies interactive UI elements by:
+- Tag names: 'button', 'a' (anchor links)
+- Class names: Contains 'button', 'action', 'link', 'menu'
+- Text content: Standalone action words like 'Open', 'Preview', 'Edit'
+```
+
+#### 4. Action Text Filtering (`filterOutActionText`)
+```javascript
+// Removes UI action text patterns:
+- "Open [Name] Preview" repetitions
+- "Open [Name] PreviewOpen [Name] Preview" duplications
+- Standalone action words: Open, Preview, Edit, View, Show, More
+- End-of-text action words cleanup
+```
+
+#### 5. Field Label Detection (`isFieldLabel`)  
 ```javascript
 // Prevents label capture by:
 - Exact text-to-label matching
@@ -178,11 +212,11 @@ Raw DOM Text → Help Element Detection → Label Detection → Text Sanitizatio
 - Length-based filtering for short labels
 ```
 
-#### 4. Smart Value Selection (`findValueElement`)
+#### 6. Smart Value Selection (`findValueElement`)
 ```javascript
-// Two-pass selection:
-Pass 1: Strict filtering (clean content only)
-Pass 2: Fallback (any non-help content)
+// Two-pass selection with scoring:
+Pass 1: Strict filtering (clean, non-interactive content only)
+Pass 2: Scoring system (prioritizes actual content over action text)
 ```
 
 ### Section Detection Logic
@@ -214,6 +248,8 @@ Add custom field mappings in `buildFieldLabelMap()`:
 ### Advanced Filtering Tuning
 - `isHelpElement()`: Customize help element detection
 - `filterOutHelpText()`: Adjust help text patterns
+- `isActionElement()`: Customize action element detection
+- `filterOutActionText()`: Adjust action text patterns
 - `isFieldLabel()`: Modify label detection logic
 
 ## Troubleshooting
@@ -223,6 +259,12 @@ Add custom field mappings in `buildFieldLabelMap()`:
 2. **Inspect DOM**: Use DevTools to examine help element structure
 3. **Customize Patterns**: Add new patterns to `filterOutHelpText()`
 4. **Element Detection**: Verify help elements have proper classes/attributes
+
+### Still Getting Action Text?
+1. **Check Element Detection**: Ensure action elements are properly identified
+2. **Pattern Matching**: Action text might use unusual format
+3. **Customize Patterns**: Add new patterns to `filterOutActionText()`
+4. **Element Classes**: Verify action elements have proper CSS classes
 
 ### Field Labels as Values?
 1. **Verify Label Mapping**: Check if field is in `FIELD_LABEL_TO_KEY`
@@ -254,6 +296,14 @@ Add organization-specific patterns:
 ```javascript
 // In filterOutHelpText(), add:
 .replace(/Your Custom Help Pattern/g, '')
+```
+
+### Custom Action Text Patterns
+Add organization-specific action text patterns:
+```javascript
+// In filterOutActionText(), add:
+.replace(/Your Custom Action Pattern/g, '')
+.replace(/Custom Button Text/gi, '')
 ```
 
 ### Section Schema Customization
@@ -296,7 +346,8 @@ Standard Salesforce scrapers often produce messy data:
 {
   "assetsApproved": "Assets Approved?Help Assets Approved?Once the Mx has...",
   "agencyContract": "Agency Contract",
-  "campaignProgram": "Campaign ProgramHelp Campaign Program..."
+  "campaignProgram": "Campaign ProgramHelp Campaign Program...",
+  "opportunityOwner": "Halen ButoracOpen Halen Butorac PreviewOpen Halen Butorac Preview"
 }
 ```
 
@@ -306,7 +357,8 @@ Clean, professional data extraction:
 {
   "assetsApproved": null,
   "agencyContract": null, 
-  "campaignProgram": null
+  "campaignProgram": null,
+  "opportunityOwner": "Halen Butorac"
 }
 ```
 

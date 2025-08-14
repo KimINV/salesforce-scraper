@@ -1040,12 +1040,38 @@
           timestamp: new Date().toISOString()
         },
         // details,
-        sections,
+        ...sections,  // Spread sections directly into payload
         chatter
       };
 
-      const ts = new Date().toISOString().replace(/[:.]/g, "-");
-      const fileName = `brf-${recordId || "unknown"}-${ts}.json`;
+      // Helper function to sanitize filename
+      const sanitizeFileName = (str) => {
+        if (!str) return "";
+        return str
+          .replace(/[<>:"/\\|?*]/g, "_")  // Replace illegal chars with underscore
+          .replace(/\s+/g, "_")          // Replace spaces with underscore
+          .replace(/_{2,}/g, "_")        // Replace multiple underscores with single
+          .replace(/^_+|_+$/g, "")       // Remove leading/trailing underscores
+          .substring(0, 100);            // Limit length
+      };
+
+      // Generate filename from brief fields
+      const briefId = sanitizeFileName(sections.general?.briefId || sections.general?.brief || "");
+      const briefItem = sanitizeFileName(sections.general?.briefItem || "");
+      
+      let fileName = "";
+      if (briefId) {
+        fileName = briefId;
+        if (briefItem) {
+          fileName += `_${briefItem}`;  // Use underscore to show hierarchy: BRF_BI
+        }
+        fileName += ".json";
+      } else {
+        // Fallback to original naming if no brief fields found
+        const ts = new Date().toISOString().replace(/[:.]/g, "-");
+        fileName = `brf-${recordId || "unknown"}-${ts}.json`;
+      }
+      
       downloadJSON(payload, fileName);
 
       showToast("BRF JSON exported.", "success", 2000);
