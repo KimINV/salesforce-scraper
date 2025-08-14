@@ -350,29 +350,171 @@
     }
   }
 
+  function isHelpElement(el) {
+    if (!el) return false;
+    
+    // Check for specific help/tooltip related classes and attributes
+    const className = el.className || "";
+    const ariaLabel = el.getAttribute?.("aria-label") || "";
+    const dataHelp = el.getAttribute?.("data-help-text") || "";
+    const role = el.getAttribute?.("role") || "";
+    
+    // More specific help element indicators
+    const specificHelpIndicators = [
+      'slds-assistive-text', 'sr-only', 'screen-reader-only',
+      'helptext', 'tooltip', 'popover-trigger'
+    ];
+    
+    // Only flag as help element if it has very specific help-related attributes
+    return specificHelpIndicators.some(indicator => 
+      className.toLowerCase().includes(indicator)
+    ) || 
+    ariaLabel.toLowerCase().includes('help') ||
+    role === 'tooltip' ||
+    dataHelp.length > 0;
+  }
+
+  function isFieldLabel(text, labelRaw) {
+    if (!text || !labelRaw) return false;
+    
+    const normalizedText = normalizeLabel(text);
+    const normalizedLabel = normalizeLabel(labelRaw);
+    
+    // Exact match
+    if (normalizedText === normalizedLabel) {
+      return true;
+    }
+    
+    // Check if text is just the label without punctuation
+    const cleanLabel = normalizedLabel.replace(/[^a-z0-9\s]/gi, '').trim();
+    const cleanText = normalizedText.replace(/[^a-z0-9\s]/gi, '').trim();
+    
+    if (cleanText === cleanLabel) {
+      return true;
+    }
+    
+    // Check common label patterns where text might be slightly different from the label
+    // e.g., "Agency Contract" vs "agency contract"
+    if (cleanText.toLowerCase() === cleanLabel.toLowerCase()) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  function filterOutHelpText(text) {
+    if (!text) return "";
+    
+    // Pattern to match exact help text format: "FieldName?Help FieldName?Description"
+    const exactHelpPattern = /^(.+?)\?\s*Help\s+\1\?(.*)$/i;
+    const exactMatch = text.match(exactHelpPattern);
+    
+    if (exactMatch) {
+      // This is clearly help text, return empty
+      return "";
+    }
+    
+    // Pattern for help text that starts with field name and contains help
+    // e.g., "Campaign ProgramHelp Campaign Program..."
+    const helpPattern = /^(.+?)Help\s+\1(.*)$/i;
+    const helpMatch = text.match(helpPattern);
+    
+    if (helpMatch) {
+      const fieldLabel = helpMatch[1].trim();
+      const remainingText = helpMatch[2].trim();
+      
+      // If it's just the field label + help, return empty
+      if (!remainingText || remainingText.startsWith('?') || fieldLabel.length < 50) {
+        return "";
+      }
+    }
+    
+    // Another pattern: "FieldNameHelp FieldNameDescription"
+    const noQuestionHelpPattern = /^(.+?)Help\s+(.+?)([A-Z][^.]*\.?)(.*)$/;
+    const noQuestionMatch = text.match(noQuestionHelpPattern);
+    
+    if (noQuestionMatch && noQuestionMatch[1].trim() === noQuestionMatch[2].trim()) {
+      // This is field label + help text, return empty
+      return "";
+    }
+    
+    // Remove specific help text patterns but preserve content
+    let cleanedText = text
+      .replace(/Help\s+[^?]*\?\s*[^.]*\./g, '') // Remove "Help FieldName? Description."
+      .replace(/\s*Edit\s+[^.]*$/g, '') // Remove "Edit FieldName" at the end
+      .trim();
+    
+    // If after cleaning we have substantial content, return it
+    if (cleanedText && cleanedText.length > 3 && !cleanedText.match(/^[^?]*\?\s*$/)) {
+      return cleanedText;
+    }
+    
+    // For short text, be more careful about filtering
+    if (text.length < 200 && text.includes('Help') && /Help\s+[A-Z]/.test(text)) {
+      return "";
+    }
+    
+    return text.trim();
+  }
+
   function pickBestText(valueEl) {
     if (!valueEl) return "";
+    
+    // Skip help/tooltip elements
+    if (isHelpElement(valueEl)) {
+      return "";
+    }
+    
     // Prefer title for date/time if present
     const title = valueEl.getAttribute?.("title");
     if (title && /\d{4}-\d{1,2}-\d{1,2}|\d{1,2}:\d{2}/.test(title)) {
       return normalizeText(title);
     }
-    // Fallback to textContent
-    return normalizeText(valueEl.textContent || valueEl.innerText || "");
+    
+    // Get text content and filter out help text
+    const text = normalizeText(valueEl.textContent || valueEl.innerText || "");
+    const cleanedText = filterOutHelpText(text);
+    
+    return cleanedText;
   }
 
   function findValueElement(container) {
     if (!container) return null;
+    
+    // First pass: try to find elements with clean content
     for (const sel of VALUE_SELECTORS) {
       try {
-        const el = container.querySelector(sel);
-        if (el && isElementVisible(el) && normalizeText(el.textContent || el.innerText)) {
-          return el;
+        const elements = container.querySelectorAll(sel);
+        for (const el of elements) {
+          if (el && isElementVisible(el) && !isHelpElement(el)) {
+            const text = normalizeText(el.textContent || el.innerText);
+            const cleanedText = filterOutHelpText(text);
+            if (cleanedText) {
+              return el;
+            }
+          }
         }
       } catch (e) {
         console.debug("[BRF] VALUE_SELECTORS try failed:", sel, e);
       }
     }
+    
+    // Second pass: be less strict if we didn't find anything
+    for (const sel of VALUE_SELECTORS) {
+      try {
+        const el = container.querySelector(sel);
+        if (el && isElementVisible(el)) {
+          const text = normalizeText(el.textContent || el.innerText);
+          // Accept any non-empty text that doesn't look like pure help text
+          if (text && !text.match(/^[^?]*\?\s*Help\s+[^?]*\?/)) {
+            return el;
+          }
+        }
+      } catch (e) {
+        console.debug("[BRF] VALUE_SELECTORS fallback failed:", sel, e);
+      }
+    }
+    
     return null;
   }
 
@@ -430,6 +572,18 @@
           }
         }
 
+        // Final cleanup: filter out labels, help text, and empty values
+        if (!textValue || 
+            textValue.trim() === "" ||
+            // Filter if it's exactly the field label
+            isFieldLabel(textValue, labelRaw) ||
+            // Filter help text patterns
+            /^[^?]*\?\s*Help\s+[^?]*\?/.test(textValue) ||
+            // Filter text that still contains help patterns
+            (/Help\s+[^?]*\?/.test(textValue) && textValue.length < 200)) {
+          textValue = "";
+        }
+
         // Dynamic grouping: first try nearest/ancestor heading; if not found, fall back to geometric nearest header
         let sectionTitle = findNearestHeadingFor(container || labelEl) || "";
         if (!sectionTitle) {
@@ -455,12 +609,16 @@
     for (const { label, value, href } of pairs) {
       const normalized = normalizeLabel(label);
       const mappedKey = FIELD_LABEL_TO_KEY.get(normalized) || camelize(label);
+      let finalValue = null;
+      
       // prefer href for specific link fields
       if (/(figma_link|external_landing_page_link|figma|external)/i.test(mappedKey) && href) {
-        details[mappedKey] = href;
-      } else {
-        details[mappedKey] = value;
+        finalValue = href;
+      } else if (value && value.trim() && !isFieldLabel(value, label)) {
+        finalValue = value;
       }
+      
+      details[mappedKey] = finalValue;
     }
     return details;
   }
@@ -570,11 +728,15 @@
             if (!grouped[sectionKey]) grouped[sectionKey] = {};
           }
         }
+        
+        let finalValue = null;
         if (/(figma_link|external_landing_page_link|figma|external)/i.test(mappedKey) && href) {
-          grouped[sectionKey][mappedKey] = href;
-        } else {
-          grouped[sectionKey][mappedKey] = value;
+          finalValue = href;
+        } else if (value && value.trim() && !isFieldLabel(value, label)) {
+          finalValue = value;
         }
+        
+        grouped[sectionKey][mappedKey] = finalValue;
       }
       return enforceSectionSchemas(grouped);
     } catch (e) {
@@ -802,7 +964,7 @@
           url: window.location.href,
           timestamp: new Date().toISOString()
         },
-        details,
+        // details,
         sections,
         chatter
       };
