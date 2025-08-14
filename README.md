@@ -1,109 +1,313 @@
-# BRF Scraper (SFDC)
+# Salesforce Scraper (Advanced BRF Extractor)
 
-A minimal, local-only Chrome Extension for Salesforce Lightning record detail pages. It adds a floating button “Export BRF JSON” at the bottom-right of the page and saves a structured JSON to your Downloads. No external services or libraries are used.
+An advanced Chrome Extension for Salesforce Lightning record detail pages with sophisticated text processing and intelligent field detection. Features advanced help text filtering, field label detection, and comprehensive section-based data organization. Completely local with no external dependencies.
 
 ## What it does
 - Runs only on Lightning record detail views: `https://*.lightning.force.com/lightning/r/*/view`
-- Extracts:
-  - Details: key–value pairs from the Details area (robust selectors; keys unified to camelCase)
-  - Chatter: latest N feed items (author, time, text; N=20 by default)
-- Triggers a local download: `brf-<recordId>-<timestamp>.json`
-- Local-only: no network requests, no external libraries
+- **Advanced Text Processing**: Intelligent filtering of help text, tooltips, and field labels
+- **Smart Field Detection**: Prevents capturing field labels as values using sophisticated pattern matching
+- **Section-Based Organization**: Automatically groups fields into logical sections:
+  - **General**: Basic campaign/brief information (briefId, campaignName, account, etc.)
+  - **Budget and Payments**: Financial data (budget, dailyBudgetCap, paymentProtocol, etc.)
+  - **Discounts and Fees**: Pricing and discount information
+  - **Funding**: Co-funding and contribution details
+  - **Configuration Details**: Campaign setup and configuration
+  - **Operations Details**: Operational links and asset information
+  - **Chatter**: Latest feed items with author, timestamp, and content
+- **Robust Field Mapping**: 100+ predefined field mappings with smart fallbacks
+- **Help Text Immunity**: Advanced filtering prevents Salesforce help tooltips from contaminating data
+- Triggers local download: `brf-<recordId>-<timestamp>.json`
+- Completely local: no network requests, no external libraries
 
-Note: Brief Items and Sections are currently disabled from the final output per request.
+## Key Advanced Features
+
+### 🛡️ Advanced Help Text Filtering
+**Problem Solved**: Salesforce help icons (?) often inject help text into field values, creating messy data like:
+```
+"assetsApproved": "Assets Approved?Help Assets Approved?Once the Mx has approved the assets..."
+```
+
+**Our Solution**: Multi-layer filtering system:
+- **Pattern Recognition**: Detects "FieldName?Help FieldName?Description" patterns
+- **Element Detection**: Identifies help/tooltip DOM elements by class and attributes
+- **Text Sanitization**: Removes help text while preserving actual field values
+- **Smart Fallbacks**: Multiple detection methods ensure comprehensive coverage
+
+### 🎯 Field Label Detection
+**Problem Solved**: Empty fields often capture their labels as values:
+```
+"agencyContract": "Agency Contract"  // This is the label, not a value!
+```
+
+**Our Solution**: Intelligent label detection:
+- **Exact Matching**: Compares extracted text with field labels
+- **Case Normalization**: Handles case differences between labels and text
+- **Punctuation Tolerance**: Accounts for punctuation variations
+- **Null Assignment**: Properly sets empty fields to `null`
+
+### 🔍 Smart Value Element Selection
+- **Two-Pass Selection**: Strict filtering first, then fallback for edge cases
+- **Help Element Avoidance**: Skips DOM elements marked as help/assistive
+- **Content Validation**: Ensures extracted text is meaningful, not just labels
+- **Link Prioritization**: Special handling for URL fields (Figma, external links)
+
+### 📊 Section Intelligence
+Automatic field organization using:
+1. **Header Detection**: Finds section titles visually near fields
+2. **Semantic Mapping**: Field names mapped to logical sections
+3. **Geometric Analysis**: Visual layout analysis for ambiguous cases
+4. **Schema Enforcement**: Ensures consistent structure across exports
 
 ## Install (Load Unpacked)
 1. Open Chrome → `chrome://extensions`
 2. Enable "Developer mode" in the top right
 3. Click "Load unpacked"
-4. Select the project directory `brf-scraper/`
+4. Select the project directory `salesforce-scraper/`
 
 ## Domain scoping (recommended)
-By default, only the following are allowed and matched:
-- `host_permissions`: `https://*.lightning.force.com/*`
-- `content_scripts.matches`: `https://*.lightning.force.com/lightning/r/*/view`
+**Security Best Practice**: Restrict to your specific Salesforce instance:
 
-It is recommended to replace the wildcard domain with your company's subdomain (e.g. `https://doordash.lightning.force.com/*`) and, if needed, restrict to specific object types:
-- For example, to match only the Brief object, change `matches` to:
-  ```
-  "matches": ["https://doordash.lightning.force.com/lightning/r/Brief__c/*/view"]
-  ```
-- And change `host_permissions` to:
-  ```
-  "host_permissions": ["https://doordash.lightning.force.com/*"]
+```json
+{
+  "host_permissions": ["https://yourcompany.lightning.force.com/*"],
+  "content_scripts": [{
+    "matches": ["https://yourcompany.lightning.force.com/lightning/r/*/view"]
+  }]
+}
+```
+
+For specific object types only:
+```json
+{
+  "content_scripts": [{
+    "matches": ["https://yourcompany.lightning.force.com/lightning/r/Brief_Item__c/*/view"]
+  }]
+}
   ```
 
 Edit the file: `manifest.json`
 
-## Output format
-The exported JSON contains only these top-level keys:
+## Output Format
+Clean, structured JSON with intelligent section organization:
+
 ```json
 {
-  "recordId": "<parsed from URL or empty>",
-  "source": { "url": "<current URL>", "timestamp": "<ISO8601>" },
-  "details": { "camelCaseField": "value", "figmaLink": "https://..." },
-  "chatter": [ { "author": "...", "time": "...", "text": "..." } ]
+  "recordId": "a3IPg000000FM0HMAW",
+  "source": {
+    "url": "https://yourcompany.lightning.force.com/lightning/r/Brief_Item__c/a3IPg000000FM0HMAW/view",
+    "timestamp": "2025-01-14T00:17:12.039Z"
+  },
+  "sections": {
+    "general": {
+      "briefId": "BRF-026473",
+      "campaignName": "C4 Performance Campaign",
+      "account": "Keurig Dr. Pepper",
+      "opportunityOwner": "Halen Butorac",
+      "startDate": "6/2/2025",
+      "endDate": "6/15/2025",
+      "figmaLink": "https://figma.com/file/xyz...",
+      "assetsApproved": null,  // ← Clean null, not help text!
+      "agencyContract": null   // ← Clean null, not "Agency Contract" label!
+    },
+    "budgetAndPayments": {
+      "budget": null,
+      "budgetPeriod": null,
+      "dailyBudgetCap": null,
+      "advertiserBudget": "USD 2,000.00",
+      "paymentProtocol": null,
+      "minimumCartSubtotal": null
+    },
+    "discountsAndFees": {
+      "flatDiscountForConsumer": "USD 2.00",
+      "incrementalMarketingFeePerRedemption": "USD 1.00"
+    },
+    "configurationDetails": {
+      "applicableDoordashOrderTypes": "All",
+      "itemLevelPromoType": "Mix & Match",
+      "brands": "C4 Performance",
+      "storePageBannerIncludedForPromo": "No"
+    }
+  },
+  "chatter": [
+    {
+      "author": "Rebecca Bustamante",
+      "time": "2 months ago",
+      "text": "Campaign is ready for launch. All assets approved."
+    }
+  ]
 }
 ```
-- Keys in `details` are unified to camelCase.
-- A built-in label map stabilizes common fields (e.g., `Brief ID` → `briefId`).
-- For link-like fields (e.g., `figmaLink`, `externalLandingPageLink`), the URL is preferred when available.
 
-## How it works (Architecture & Logic)
-- MV3, content-script only (no background worker).
-- Files
-  - `manifest.json`: MV3 config, match patterns, permissions, icons
-  - `content.js`: UI injection, scraping, normalization, export
-  - `ui.css`: styles for the floating button and toasts
-  - `icons/`: local PNGs
+### ✨ Data Quality Highlights
+- **No Help Text Contamination**: Fields contain actual values or `null`, never help descriptions
+- **No Label Pollution**: Empty fields are `null`, not field label text
+- **Clean URLs**: Link fields contain actual URLs, not display text
+- **Consistent Structure**: Section schemas ensure predictable field presence
 
-- Lifecycle
-  1) Script runs at `document_idle`
-  2) Injects a floating button and a toast component
-  3) A MutationObserver keeps the button present across Lightning re-renders
+## Architecture & Advanced Logic
 
-- Extraction pipeline
-  1) `extractRecordIdFromUrl()` parses record id from `/lightning/r/<object>/<id>/view`
-  2) `getLabelValuePairs()` collects label/value using tolerant selectors and container heuristics
-  3) `mapPairsToDetails()` applies `FIELD_LABEL_TO_KEY`; otherwise auto-generates camelCase keys via `camelize()`
-  4) `extractChatter()` collects latest N feed entries (author/time/text)
-  5) Bundle → download as `brf-<recordId>-<timestamp>.json`
+### Text Processing Pipeline
+```
+Raw DOM Text → Help Element Detection → Label Detection → Text Sanitization → Value Assignment
+```
 
-- Selector resilience
-  - Labels: `.test-id__field-label`, `.slds-form-element__label`, `.slds-item_label`
-  - Values: `.test-id__field-value`, `.slds-form-element__static`, `.slds-truncate`, `lightning-formatted-*`, `a[title]`, `a`, `span[title]`
-  - Containers: `records-record-layout-item, .slds-form-element, .slds-form__row, .record-layout-item, .slds-grid`
-  - Chatter: `.feedContainer, .forceChatterFeed, .chatterFeed, .cuf-feed`
+#### 1. Help Element Detection (`isHelpElement`)
+```javascript
+// Detects help/tooltip elements by:
+- Class names: 'slds-assistive-text', 'sr-only', 'helptext'
+- ARIA labels: Contains 'help'  
+- Data attributes: 'data-help-text'
+- Role attributes: 'tooltip'
+```
 
-- Normalization
-  - `normalizeText()` trims and collapses whitespace
-  - `normalizeLabel()` lowercases and strips trailing colon
-  - `camelize()` converts arbitrary labels to camelCase
+#### 2. Help Text Filtering (`filterOutHelpText`)
+```javascript
+// Removes patterns like:
+- "FieldName?Help FieldName?Description..."
+- "Campaign ProgramHelp Campaign Program..."
+- "Edit FieldName" suffixes
+- Short help text under 200 chars with "Help" keywords
+```
 
-- Error handling
-  - Toast summaries for success/failure; detailed logs in console
-  - All selector queries are try/catch guarded
+#### 3. Field Label Detection (`isFieldLabel`)  
+```javascript
+// Prevents label capture by:
+- Exact text-to-label matching
+- Case-insensitive comparison
+- Punctuation normalization
+- Length-based filtering for short labels
+```
 
-## Configuration points
-- `CHATTER_MAX` controls number of posts (default 20)
-- `FIELD_LABEL_TO_KEY` allows extending label→key mappings (EN/CN)
-- Selector arrays can be adjusted if your Lightning skin differs
+#### 4. Smart Value Selection (`findValueElement`)
+```javascript
+// Two-pass selection:
+Pass 1: Strict filtering (clean content only)
+Pass 2: Fallback (any non-help content)
+```
 
-## Known limitations
-- Cannot pierce closed LWC shadow roots; relies on visible light DOM
-- Captures only currently visible content; no auto-expansion/pagination
-- Scroll/expand sections that are lazy-loaded or collapsed before export
+### Section Detection Logic
+1. **Header Proximity**: Geometric analysis finds nearest section header above field
+2. **Semantic Mapping**: 100+ field names mapped to appropriate sections
+3. **Schema Enforcement**: Required fields added as `null` if missing
 
-## Re-enabling optional features
-- Sections grouping and Brief Items extraction are present in code but disabled from the final payload. Re-enable by wiring them back in `onExportClick()` if needed.
+### Comprehensive Field Mapping
+Pre-configured mappings include:
+- **Campaign Fields**: Brief ID, Campaign Name, Account, Opportunity details
+- **Financial Fields**: Budget, Daily Budget Cap, Payment Protocol, Pricing
+- **Operational Fields**: Assets, Figma links, Asset folders, Configuration
+- **Multiple Variants**: Both snake_case and camelCase supported
 
-## FAQ & Customization
-- If some fields are not captured:
-  1) Inspect DOM structure/classes in DevTools Elements
-  2) Adjust `LABEL_SELECTORS` / `VALUE_SELECTORS` / `FIELD_CONTAINER_SELECTORS` in `content.js`
-  3) Add new mappings to `FIELD_LABEL_TO_KEY`
-- Change Chatter count: edit `CHATTER_MAX` in `content.js` (default 20)
+## Configuration
 
-## Privacy & Compliance
-- No network requests, no uploads, no third-party libs
-- Everything runs locally in your browser
+### Field Mapping Extension
+Add custom field mappings in `buildFieldLabelMap()`:
+```javascript
+["Your Custom Field", "yourCustomField"],
+["Another Field", "anotherField"]
+```
+
+### Section Configuration
+- `SECTION_TITLE_TO_KEY`: Maps section headers to section keys
+- `FIELD_KEY_TO_SECTION`: Maps field names to sections
+- `SECTION_SCHEMAS`: Defines required fields per section
+
+### Advanced Filtering Tuning
+- `isHelpElement()`: Customize help element detection
+- `filterOutHelpText()`: Adjust help text patterns
+- `isFieldLabel()`: Modify label detection logic
+
+## Troubleshooting
+
+### Still Getting Help Text?
+1. **Check Pattern Matching**: Help text might use unusual format
+2. **Inspect DOM**: Use DevTools to examine help element structure
+3. **Customize Patterns**: Add new patterns to `filterOutHelpText()`
+4. **Element Detection**: Verify help elements have proper classes/attributes
+
+### Field Labels as Values?
+1. **Verify Label Mapping**: Check if field is in `FIELD_LABEL_TO_KEY`
+2. **Case Sensitivity**: Ensure label normalization works correctly
+3. **Custom Fields**: Add new field mappings as needed
+4. **Debug Mode**: Check console logs for field detection details
+
+### Missing Fields?
+1. **DOM Structure**: Inspect field container and value element structure
+2. **Selector Updates**: Customize `VALUE_SELECTORS` for your Lightning theme
+3. **Visibility**: Ensure fields are expanded and visible
+4. **Shadow DOM**: Some fields may be in closed shadow roots (not accessible)
+
+### Wrong Section Assignment?
+1. **Header Detection**: Check if section headers are properly detected
+2. **Field Mapping**: Add field to `FIELD_KEY_TO_SECTION` for manual assignment
+3. **Section Titles**: Verify section title patterns in `SECTION_TITLE_TO_KEY`
+
+## Known Limitations
+- **Shadow DOM**: Cannot access closed Lightning Web Component shadow roots
+- **Dynamic Content**: Only captures currently visible/loaded content
+- **Custom Components**: May need selector updates for highly customized orgs
+- **Heavy Filtering**: Aggressive help text filtering may occasionally affect edge cases
+
+## Advanced Usage
+
+### Custom Help Text Patterns
+Add organization-specific patterns:
+```javascript
+// In filterOutHelpText(), add:
+.replace(/Your Custom Help Pattern/g, '')
+```
+
+### Section Schema Customization
+Define required fields for sections:
+```javascript
+SECTION_SCHEMAS.yourSection = [
+  "requiredField1",
+  "requiredField2"
+];
+```
+
+### Multi-Language Support
+Extend field mappings for different languages:
+```javascript
+// In buildFieldLabelMap():
+["Campo Personalizado", "customField"],  // Spanish
+["自定义字段", "customField"]              // Chinese
+```
+
+## Performance Features
+- **Cached Headers**: Section headers cached for geometric analysis
+- **Optimized Selectors**: Efficient DOM querying with fallbacks
+- **Error Isolation**: All operations wrapped in try/catch blocks
+- **Memory Management**: Cleanup of temporary DOM elements
+
+## Privacy & Security
+- **🔒 Zero Network Requests**: All processing happens locally in browser
+- **📁 Local Storage Only**: Data saved directly to Downloads folder
+- **🚫 No Telemetry**: No analytics, tracking, or data collection
+- **⚡ No External Dependencies**: Self-contained extension
+- **🛡️ Domain Restrictions**: Configurable to specific Salesforce instances
+
+---
+
+## Why This Advanced Version?
+
+### The Problem
+Standard Salesforce scrapers often produce messy data:
+```json
+{
+  "assetsApproved": "Assets Approved?Help Assets Approved?Once the Mx has...",
+  "agencyContract": "Agency Contract",
+  "campaignProgram": "Campaign ProgramHelp Campaign Program..."
+}
+```
+
+### Our Solution
+Clean, professional data extraction:
+```json
+{
+  "assetsApproved": null,
+  "agencyContract": null, 
+  "campaignProgram": null
+}
+```
+
+This advanced version ensures **production-ready data quality** for business intelligence, reporting, and automation workflows.
